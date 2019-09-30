@@ -2,19 +2,17 @@ module Main where
 
 import Prelude
 import Effect (Effect)
-import Effect.Class (liftEffect)
-import Effect.Console (log, error)
+import Effect.Console (error)
 import Control.Monad.Cont
--- import Control.Monad.Eff
 
-import Partial.Unsafe (unsafePartial)
-import Data.Maybe (Maybe(..), fromJust)
+-- import Partial.Unsafe (unsafePartial)
+import Data.Maybe (Maybe(..))
 
 import Web.HTML.HTMLDocument (toNonElementParentNode) as DOM
 import Web.DOM.NonElementParentNode (getElementById) as DOM
 import Web.HTML (window) as DOM
 import Web.HTML.Window (document) as DOM
-import React.DOM (text, button) as DOM
+import React.DOM (text, int, button, div, h1) as DOM
 import React.DOM.Props as Props
 
 import React as React
@@ -45,11 +43,20 @@ produce4 =
 main :: Effect Unit
 -- main = mountApp (React.createLeafElement mainClass { num: 3 })
 main =
-  runContT continueWithApp $ \result -> mountApp (DOM.text $ show result)
+  flip runContT identity $ do
+    first <- doPage "Choose first number:"
+    second <- doPlusOne
+    pure $ mountApp $ React.createLeafElement resultClass { value: first + second, next: main }
 
-continueWithApp :: ContT Unit Effect Int
-continueWithApp =
-  ContT $ \next -> mountApp (React.createLeafElement mainClass { num: 3, next: next })
+doPage :: String -> ContT Unit Effect Int
+doPage title =
+  ContT $ \next -> mountApp (React.createLeafElement mainClass { title: title, num: 3, next: next })
+
+doPlusOne :: ContT Unit Effect Int
+doPlusOne = do
+  second <- ContT $ \next -> mountApp (React.createLeafElement mainClass { title: "Choose second number: ", num: 3, next: next })
+  third <- pure 1
+  pure $ second + third
 
 mountApp :: React.ReactElement -> Effect Unit
 mountApp app = void $ do
@@ -60,7 +67,7 @@ mountApp app = void $ do
     Nothing -> error "Could not find DOM node to mount on" *> pure Nothing
     Just node -> ReactDOM.render app node
 
-mainClass :: React.ReactClass { num :: Int, next :: (Int -> Effect Unit) }
+mainClass :: React.ReactClass { title :: String, num :: Int, next :: (Int -> Effect Unit) }
 mainClass = React.component "Main" component
   where
   component this =
@@ -68,9 +75,39 @@ mainClass = React.component "Main" component
           , render: render <$> React.getProps this
           }
     where
-      render { num, next } =
-        DOM.button
-          [ Props._type "button"
-          , Props.onClick $ \_ -> next 3
+      render { title, num, next } =
+        DOM.div []
+          [ DOM.h1 [] [ DOM.text title ]
+          , DOM.div [] $ map button [1, 2, 3, 4, 5]
           ]
-          [ DOM.text $ runCont (doAdd produce3 produce4) $ \x -> show $ x + num ]
+        where
+          button option = React.createLeafElement optionButtonClass { option: option, next: next }
+
+optionButtonClass :: React.ReactClass { option :: Int, next :: (Int -> Effect Unit) }
+optionButtonClass = React.component "OptionButton" component
+  where
+  component this =
+    pure { state: {}
+         , render: render <$> React.getProps this
+         }
+    where
+    render { option, next } =
+      DOM.button
+        [ Props._type "button"
+        , Props.onClick $ \_ -> next option
+        ]
+        [ DOM.int option ]
+
+resultClass :: React.ReactClass { value :: Int, next :: Effect Unit }
+resultClass = React.component "Result" component
+  where
+    component this =
+      pure { state: {}
+           , render: render <$> React.getProps this
+           }
+      where
+        render { value, next } =
+          DOM.div []
+            [ DOM.h1 [] [ DOM.text $ "Result: " <> (show value) ]
+            , DOM.button [ Props._type "button", Props.onClick $ \_ -> next ] [ DOM.text "Reset" ]
+            ]
