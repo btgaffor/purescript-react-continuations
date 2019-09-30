@@ -93,21 +93,15 @@ optionButtonClass = React.component "OptionButton" component
     where
     render { option, next } =
       DOM.button
-        [ Props._type "button"
-        , Props.onClick $ \_ -> next option
-        ]
+        [ Props._type "button" , Props.onClick $ \_ -> next option]
         [ DOM.int option ]
 
 resultClass :: React.ReactClass { value :: Int, next :: Effect Unit }
-resultClass = React.component "Result" component
-  where
-    component this =
-      pure { state: {}
-           , render: render <$> React.getProps this
-           }
-      where
-        render { value, next } =
-          DOM.div []
-            [ DOM.h1 [] [ DOM.text $ "Result: " <> (show value) ]
-            , DOM.button [ Props._type "button", Props.onClick $ \_ -> next ] [ DOM.text "Reset" ]
-            ]
+resultClass = React.component "Result" \this ->
+  pure { state: {}
+       , render: React.getProps this # map \{ value, next } ->
+         DOM.div []
+           [ DOM.h1 [] [ DOM.text $ "Result: " <> (show value) ]
+           , DOM.button [ Props._type "button", Props.onClick $ \_ -> next ] [ DOM.text "Reset" ]
+           ]
+       }
