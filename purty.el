@@ -1,0 +1,12 @@
+(defun btgaffor/purty-file ()
+  (interactive)
+  (shell-command (format "purty %s --write" (buffer-file-name)))
+  ;; (find-alternate-file (buffer-file-name))
+  )
+
+(defun btgaffor/purty-on-save ()
+  (interactive)
+  (if (cl-search ".purs" (buffer-file-name))
+      (btgaffor/purty-file)
+    ))
+(add-hook 'after-save-hook 'btgaffor/purty-on-save)
