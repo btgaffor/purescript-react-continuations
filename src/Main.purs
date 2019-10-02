@@ -40,25 +40,40 @@ main =
     $ do
         first <- doPage "Choose first number:"
         second <- doPlusOne
-        { first, second } <- doRecurse { first, second }
-        pure $ mountApp $ React.createLeafElement resultClass { value: first + second, next: main }
+        result <- ContT $ flip doRecurse { first, second }
+        pure $ mountApp $ React.createLeafElement resultClass { value: result.first + result.second, next: main }
 
 doPage :: String -> ContT Unit Effect Int
 doPage title = ContT $ \next -> mountApp (React.createLeafElement mainClass { title: title, next: next })
 
-doRecurse :: { first :: Int, second :: Int } -> ContT Unit Effect { first :: Int, second :: Int }
-doRecurse { first, second } = ContT $ doRecurseInner { first, second }
+data Action
+  = First Int
+  | Second Int
 
-doRecurseInner :: { first :: Int, second :: Int } -> ({ first :: Int, second :: Int } -> Effect Unit) -> Effect Unit
-doRecurseInner model next =
+type Model
+  = { first :: Int, second :: Int }
+
+updateRecurse :: Model -> Action -> Model
+updateRecurse model action = case action of
+  First num -> model { first = num }
+  Second num -> model { second = num }
+
+doRecurse :: (Model -> Effect Unit) -> Model -> Effect Unit
+doRecurse next model =
   mountApp
     $ DOM.div
         []
         [ DOM.h1 [] [ DOM.text $ show model.first <> ", " <> show model.second ]
-        , DOM.button [ Props._type "button", Props.onClick $ \_ -> doRecurseInner (model { first = model.first + 1 }) next ] [ DOM.text "Add 1" ]
-        , DOM.button [ Props._type "button", Props.onClick $ \_ -> doRecurseInner (model { second = model.second + 1 }) next ] [ DOM.text "Add 1" ]
-        , DOM.button [ Props._type "button", Props.onClick $ \_ -> next model ] [ DOM.text "Submit" ]
+        , increaseButtonTagged model.first (updateRecurse model >>> doRecurse next) First
+        , increaseButton model.second $ doRecurse next <<< model { second = _ }
+        , DOM.button [ Props._type "button", Props.onClick $ const $ next model ] [ DOM.text "Submit" ]
         ]
+
+increaseButtonTagged :: Int -> (Action -> Effect Unit) -> (Int -> Action) -> React.ReactElement
+increaseButtonTagged value update tag = DOM.button [ Props._type "button", Props.onClick $ \_ -> update (tag (value + 1)) ] [ DOM.text "Add 1" ]
+
+increaseButton :: Int -> (Int -> Effect Unit) -> React.ReactElement
+increaseButton value next = DOM.button [ Props._type "button", Props.onClick $ const $ next (value + 1) ] [ DOM.text "Add 1" ]
 
 doPlusOne :: ContT Unit Effect Int
 doPlusOne = do
@@ -69,42 +84,28 @@ doPlusOne = do
 mountApp :: React.ReactElement -> Effect Unit
 mountApp app =
   void
-    $ do
-        window <- DOM.window
-        document <- DOM.document window
-        element <- DOM.getElementById "example" $ DOM.toNonElementParentNode document
-        case element of
-          Nothing -> error "Could not find DOM node to mount on" *> pure Nothing
-          Just node -> ReactDOM.render app node
+    $ DOM.window
+    >>= DOM.document
+    >>= (DOM.toNonElementParentNode >>> pure)
+    >>= DOM.getElementById "example"
+    >>= \element -> case element of
+        Nothing -> error "Could not find DOM node to mount on" *> pure Nothing
+        Just node -> ReactDOM.render app node
 
 mainClass :: React.ReactClass { title :: String, next :: (Int -> Effect Unit) }
 mainClass =
-  React.component "Main" \this ->
-    pure
-      { state: {}
-      , render:
-        React.getProps this
-          # map \{ title, next } ->
-              DOM.div []
-                [ DOM.h1 [] [ DOM.text title ]
-                , DOM.div [] $ [ 1, 2, 3, 4, 5 ]
-                    # map \option ->
-                        React.createLeafElement optionButtonClass { option: option, next: next }
-                ]
-      }
+  React.statelessComponent \{ title, next } ->
+    DOM.div []
+      [ DOM.h1 [] [ DOM.text title ]
+      , DOM.div [] $ map ({ option: _, next } >>> React.createLeafElement optionButtonClass) [ 1, 2, 3, 4, 5 ]
+      ]
 
 optionButtonClass :: React.ReactClass { option :: Int, next :: (Int -> Effect Unit) }
 optionButtonClass =
-  React.component "OptionButton" \this ->
-    pure
-      { state: {}
-      , render:
-        React.getProps this
-          # map \{ option, next } ->
-              DOM.button
-                [ Props._type "button", Props.onClick $ \_ -> next option ]
-                [ DOM.int option ]
-      }
+  React.statelessComponent \{ option, next } ->
+    DOM.button
+      [ Props._type "button", Props.onClick $ const $ next option ]
+      [ DOM.int option ]
 
 resultClass :: React.ReactClass { value :: Int, next :: Effect Unit }
 resultClass =
@@ -116,6 +117,6 @@ resultClass =
           # map \{ value, next } ->
               DOM.div []
                 [ DOM.h1 [] [ DOM.text $ "Result: " <> (show value) ]
-                , DOM.button [ Props._type "button", Props.onClick $ \_ -> next ] [ DOM.text "Reset" ]
+                , DOM.button [ Props._type "button", Props.onClick $ const next ] [ DOM.text "Reset" ]
                 ]
       }
